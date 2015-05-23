@@ -1,0 +1,59 @@
+---
+title: "Barbell Lift Exercise Classification"
+author: "Carlos Barboza"
+date: "23/05/2015"
+output: html_document
+---
+
+## Summary
+
+This report shows the steps taken in order to create a model to predict wheather a person is performing barbell lifts correctly or not. Data taken for training and testing the model were provided by Weight Lifting Exercise Dataset from PUC-RIO. The dataset and additional information can be found [here](http://groupware.les.inf.puc-rio.br/har).
+
+## Loading the Training Set, Exploratory Analysis and Cleaning Data
+
+The dataset is composed of 19.622 observations of 160 variables, the first variables are used identify the observation (X), the person that made the activity (user_name), time of the activity (\*timestamp\*) and measurement window (\*window\*). These variables will be excluded from analysis and model creation since they don't really measure the activity. We are interested just on the activities from the sensors: belt, arm, dumbbell and forearm that correspont to columns from 8 to 159 and the activity classification, column 160.  
+
+```{r, cache=TRUE}
+setwd("/home/carlos/Projects/coursera/barbell_exercise_classification/")
+trainingData <- read.csv("pml-training.csv")
+filteredTrainingData <- trainingData[8:160]
+```
+
+It's possible to verify through the summary function on the dataset (excluded from this report to not polute it) that some variables are set to "#DIV/0!" or blank spaces. These values will be replaced by "NA" for further processing. Also, columns that had blanks or "#DIV/0!" were classified as factors during importation, so let's convert all columns to numeric.
+
+```{r, cache=TRUE}
+library(gdata)
+filteredTrainingData[trim(filteredTrainingData)=="#DIV/0!"] <- NA
+filteredTrainingData[trim(filteredTrainingData)==""] <- NA
+filteredTrainingData <- cbind(sapply(filteredTrainingData[,1:152], as.numeric),data.frame("classe"=filteredTrainingData[,153]))
+```
+
+After the clean up, some columns had just NA values, these columns will be removed from the dataset. Also, some columns had zero variance and should be removed as well since they don't contribute to the analysis.
+
+```{r, cache=TRUE}
+filteredTrainingData <- filteredTrainingData[,colSums(is.na(filteredTrainingData))<nrow(filteredTrainingData)]
+filteredTrainingData <- filteredTrainingData[,sapply(filteredTrainingData, var, na.rm=TRUE)!=0]
+```
+
+
+## Features Selection and Principal Components Analysis
+
+As described on the previous section, all features that correspond to measurements of the belt, arm, dumbbell and forearm were selected. After some clean-up we ended up with 144 features on the dataset. This is a large number of features, and a visual analysis through a pair plot is unfeasible to identify correlated data. Thus, we will use a principal component analysis to identify the features or feature combinations that kept 95% of the variance and train our model based on that.
+
+```{r, cache=TRUE}
+library(caret)
+preProc <- preProcess(filteredTrainingData[,-145],method="pca",thresh=0.95)
+preProc
+```
+
+As we can see, with only 52 features (components) we can capture 95% of the variance. Now, let's fit a model using a pre-processed data. Since our outcome variable has 5 levels, we should use a tree method. In our case we will use Random Forests.
+
+```{r, cache=TRUE, echo = FALSE}
+trainPCA <- predict(preProc,filteredTrainingData[,-145])
+modelFit <- train(filteredTrainingData$classe ~ ., method="rf", data=trainPCA)
+```
+
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
