@@ -13,47 +13,105 @@ This report shows the steps taken in order to create a model to predict wheather
 
 The dataset is composed of 19.622 observations of 160 variables, the first variables are used identify the observation (X), the person that made the activity (user_name), time of the activity (\*timestamp\*) and measurement window (\*window\*). These variables will be excluded from analysis and model creation since they don't really measure the activity. We are interested just on the activities from the sensors: belt, arm, dumbbell and forearm that correspont to columns from 8 to 159 and the activity classification, column 160.  
 
-```{r, cache=TRUE}
-setwd("/home/carlos/Projects/coursera/barbell_exercise_classification/")
-trainingData <- read.csv("pml-training.csv")
-filteredTrainingData <- trainingData[8:160]
+```{r}
+set.seed(13)
+data <- read.csv("pml-training.csv")
+filteredData <- data[8:160]
 ```
 
 It's possible to verify through the summary function on the dataset (excluded from this report to not polute it) that some variables are set to "#DIV/0!" or blank spaces. These values will be replaced by "NA" for further processing. Also, columns that had blanks or "#DIV/0!" were classified as factors during importation, so let's convert all columns to numeric.
 
-```{r, cache=TRUE}
+```{r}
 library(gdata)
-filteredTrainingData[trim(filteredTrainingData)=="#DIV/0!"] <- NA
-filteredTrainingData[trim(filteredTrainingData)==""] <- NA
-filteredTrainingData <- cbind(sapply(filteredTrainingData[,1:152], as.numeric),data.frame("classe"=filteredTrainingData[,153]))
+filteredData[trim(filteredData)=="#DIV/0!"] <- NA
+filteredData[trim(filteredData)==""] <- NA
+filteredData <- cbind(sapply(filteredData[,1:152], as.numeric),data.frame("classe"=filteredData[,153]))
 ```
 
-After the clean up, some columns had just NA values, these columns will be removed from the dataset. Also, some columns had zero variance and should be removed as well since they don't contribute to the analysis.
+After the clean up, some columns seems to be composed basically by NA values, we will remove columns where the percentage of NAs is higher than 95% since they will not add up to our analysis. Also, some columns had zero variance and should be removed as well since they don't contribute to the analysis.
 
-```{r, cache=TRUE}
-filteredTrainingData <- filteredTrainingData[,colSums(is.na(filteredTrainingData))<nrow(filteredTrainingData)]
-filteredTrainingData <- filteredTrainingData[,sapply(filteredTrainingData, var, na.rm=TRUE)!=0]
+```{r}
+filteredData <- filteredData[,colSums(is.na(filteredData))/nrow(filteredData)<0.95]
+filteredData <- filteredData[,sapply(filteredData, var, na.rm=TRUE)!=0]
+```
+
+We ended up with 52 covariants and the outcome classe.
+
+
+## Creating the Train and Test Set
+
+Now let's create the training and test set before proceeding with model creation.
+
+```{r}
+library(caret)
+inTrain <- createDataPartition(y=filteredData$classe, p=0.75, list=FALSE)
+trainSet <- filteredData[inTrain,]
+testSet <- filteredData[-inTrain,]
 ```
 
 
 ## Features Selection and Principal Components Analysis
 
-As described on the previous section, all features that correspond to measurements of the belt, arm, dumbbell and forearm were selected. After some clean-up we ended up with 144 features on the dataset. This is a large number of features, and a visual analysis through a pair plot is unfeasible to identify correlated data. Thus, we will use a principal component analysis to identify the features or feature combinations that kept 95% of the variance and train our model based on that.
+As described on the previous section, all features that correspond to measurements of the belt, arm, dumbbell and forearm were selected. After some clean-up we ended up with 52 features on the dataset. This is a large number of features, and a visual analysis through a pair plot is unfeasible to identify correlated data. Thus, we will use a principal component analysis to identify the features or feature combinations that kept 95% of the variance and train our model based on that.
 
-```{r, cache=TRUE}
-library(caret)
-preProc <- preProcess(filteredTrainingData[,-145],method="pca",thresh=0.95)
+```{r}
+preProc <- preProcess(trainSet[,-53],method="pca",thresh=0.95)
 preProc
 ```
 
-As we can see, with only 52 features (components) we can capture 95% of the variance. Now, let's fit a model using a pre-processed data. Since our outcome variable has 5 levels, we should use a tree method. In our case we will use Random Forests.
+As we can see, with only 25 features (components) we can capture 95% of the variance. Now, let's fit a model using a pre-processed data. Since our outcome variable has 5 levels, we should use a tree method. In our case we will use Random Forests.
 
-```{r, cache=TRUE, echo = FALSE}
-trainPCA <- predict(preProc,filteredTrainingData[,-145])
-modelFit <- train(filteredTrainingData$classe ~ ., method="rf", data=trainPCA)
+```{r}
+trainPCA <- predict(preProc,trainSet[,-53])
+library(randomForest)
+modelFit <- randomForest(trainSet$classe ~ ., data=trainPCA)
+modelFit
+```
+
+```{r}
+modelFit
+```
+
+As we can see, the out-of-bag error rate is 2.32%, which is a low error rate.
+
+## Cross-Validation and Out of Sample Error
+
+Now let's cross validate our fitted model with the test data set provided. We have to apply the test set to the same pre-processing algorithm used on the training data.
+
+```{r}
+testPCA <- predict(preProc,testSet[,-53])
 ```
 
 
+Finally, let's create a confusion matrix to obtain our out of sample error estimation.
+
+```{r}
+confusionMatrix(testSet$classe,predict(modelFit,testPCA))
+```
+
+We can confirm the accuracy of our model with the testing set, where we got a 97.68% accuracy with a 95% confidence interval ranging from 97.21% to 98.08%. The sensitivy and specificity of our model for all 5 classes were very high as well, all above 93%.
+
+## Applying our model to the 20 samples of the pml-testing.csv file
+
+Let's first load the file
+
+```{r}
+exam <- read.csv("pml-testing.csv")
+```
+
+Let's apply the same transformations as we did in the pml-training.csv file prior predicting our model. Let's keep only the 52 columns used for the PCA and then apply our PCA algorithm to the data set.
+
+```{r}
+exam <- read.csv("pml-testing.csv")
+exam <- cbind(exam[, which(names(exam) %in% names(filteredData))],data.frame("problem_id"=exam$problem_id))
+examPCA <- predict(preProc,exam[,-53])
+```
+
+Now let's predict the outcome based on our model
+
+```{r}
+answers <- predict(modelFit,examPCA)
+answers
+```
 
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

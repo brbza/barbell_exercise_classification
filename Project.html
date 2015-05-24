@@ -66,9 +66,9 @@ if (window.hljs && document.readyState && document.readyState === "complete") {
 <div id="loading-the-training-set-exploratory-analysis-and-cleaning-data" class="section level2">
 <h2>Loading the Training Set, Exploratory Analysis and Cleaning Data</h2>
 <p>The dataset is composed of 19.622 observations of 160 variables, the first variables are used identify the observation (X), the person that made the activity (user_name), time of the activity (*timestamp*) and measurement window (*window*). These variables will be excluded from analysis and model creation since they don’t really measure the activity. We are interested just on the activities from the sensors: belt, arm, dumbbell and forearm that correspont to columns from 8 to 159 and the activity classification, column 160.</p>
-<pre class="r"><code>setwd(&quot;/home/carlos/Projects/coursera/barbell_exercise_classification/&quot;)
-trainingData &lt;- read.csv(&quot;pml-training.csv&quot;)
-filteredTrainingData &lt;- trainingData[8:160]</code></pre>
+<pre class="r"><code>set.seed(13)
+data &lt;- read.csv(&quot;pml-training.csv&quot;)
+filteredData &lt;- data[8:160]</code></pre>
 <p>It’s possible to verify through the summary function on the dataset (excluded from this report to not polute it) that some variables are set to “#DIV/0!” or blank spaces. These values will be replaced by “NA” for further processing. Also, columns that had blanks or “#DIV/0!” were classified as factors during importation, so let’s convert all columns to numeric.</p>
 <pre class="r"><code>library(gdata)</code></pre>
 <pre><code>## gdata: read.xls support for 'XLS' (Excel 97-2004) files ENABLED.
@@ -84,35 +84,41 @@ filteredTrainingData &lt;- trainingData[8:160]</code></pre>
 ## The following object is masked from 'package:utils':
 ## 
 ##     object.size</code></pre>
-<pre class="r"><code>filteredTrainingData[trim(filteredTrainingData)==&quot;#DIV/0!&quot;] &lt;- NA
-filteredTrainingData[trim(filteredTrainingData)==&quot;&quot;] &lt;- NA
-filteredTrainingData &lt;- cbind(sapply(filteredTrainingData[,1:152], as.numeric),data.frame(&quot;classe&quot;=filteredTrainingData[,153]))</code></pre>
-<p>After the clean up, some columns had just NA values, these columns will be removed from the dataset. Also, some columns had zero variance and should be removed as well since they don’t contribute to the analysis.</p>
-<pre class="r"><code>filteredTrainingData &lt;- filteredTrainingData[,colSums(is.na(filteredTrainingData))&lt;nrow(filteredTrainingData)]
-filteredTrainingData &lt;- filteredTrainingData[,sapply(filteredTrainingData, var, na.rm=TRUE)!=0]</code></pre>
+<pre class="r"><code>filteredData[trim(filteredData)==&quot;#DIV/0!&quot;] &lt;- NA
+filteredData[trim(filteredData)==&quot;&quot;] &lt;- NA
+filteredData &lt;- cbind(sapply(filteredData[,1:152], as.numeric),data.frame(&quot;classe&quot;=filteredData[,153]))</code></pre>
+<p>After the clean up, some columns seems to be composed basically by NA values, we will remove columns where the percentage of NAs is higher than 95% since they will not add up to our analysis. Also, some columns had zero variance and should be removed as well since they don’t contribute to the analysis.</p>
+<pre class="r"><code>filteredData &lt;- filteredData[,colSums(is.na(filteredData))/nrow(filteredData)&lt;0.95]
+filteredData &lt;- filteredData[,sapply(filteredData, var, na.rm=TRUE)!=0]</code></pre>
+<p>We ended up with 52 covariants and the outcome classe.</p>
 </div>
-<div id="features-selection-and-principal-components-analysis" class="section level2">
-<h2>Features Selection and Principal Components Analysis</h2>
-<p>As described on the previous section, all features that correspond to measurements of the belt, arm, dumbbell and forearm were selected. After some clean-up we ended up with 144 features on the dataset. This is a large number of features, and a visual analysis through a pair plot is unfeasible to identify correlated data. Thus, we will use a principal component analysis to identify the features or feature combinations that kept 95% of the variance and train our model based on that.</p>
+<div id="creating-the-train-and-test-set" class="section level2">
+<h2>Creating the Train and Test Set</h2>
+<p>Now let’s create the training and test set before proceeding with model creation.</p>
 <pre class="r"><code>library(caret)</code></pre>
 <pre><code>## Loading required package: lattice
 ## Loading required package: ggplot2</code></pre>
-<pre class="r"><code>preProc &lt;- preProcess(filteredTrainingData[,-145],method=&quot;pca&quot;,thresh=0.95)
+<pre class="r"><code>inTrain &lt;- createDataPartition(y=filteredData$classe, p=0.75, list=FALSE)
+trainSet &lt;- filteredData[inTrain,]
+testSet &lt;- filteredData[-inTrain,]</code></pre>
+</div>
+<div id="features-selection-and-principal-components-analysis" class="section level2">
+<h2>Features Selection and Principal Components Analysis</h2>
+<p>As described on the previous section, all features that correspond to measurements of the belt, arm, dumbbell and forearm were selected. After some clean-up we ended up with 52 features on the dataset. This is a large number of features, and a visual analysis through a pair plot is unfeasible to identify correlated data. Thus, we will use a principal component analysis to identify the features or feature combinations that kept 95% of the variance and train our model based on that.</p>
+<pre class="r"><code>preProc &lt;- preProcess(trainSet[,-53],method=&quot;pca&quot;,thresh=0.95)
 preProc</code></pre>
 <pre><code>## 
 ## Call:
-## preProcess.default(x = filteredTrainingData[, -145], method =
-##  &quot;pca&quot;, thresh = 0.95)
+## preProcess.default(x = trainSet[, -53], method = &quot;pca&quot;, thresh = 0.95)
 ## 
-## Created from 217 samples and 144 variables
+## Created from 14718 samples and 52 variables
 ## Pre-processing: principal component signal extraction, scaled, centered 
 ## 
-## PCA needed 52 components to capture 95 percent of the variance</code></pre>
-<p>As we can see, with only 52 features (components) we can capture 95% of the variance. Now, let’s fit a model using a pre-processed data. Since our outcome variable has 5 levels, we should use a tree method. In our case we will use Random Forests.</p>
-<pre class="r"><code>trainPCA &lt;- predict(preProc,filteredTrainingData[,-145])
-modelFit &lt;- train(filteredTrainingData$classe ~ ., method=&quot;rf&quot;, data=trainPCA)</code></pre>
-<pre><code>## Loading required package: randomForest
-## randomForest 4.6-10
+## PCA needed 25 components to capture 95 percent of the variance</code></pre>
+<p>As we can see, with only 25 features (components) we can capture 95% of the variance. Now, let’s fit a model using a pre-processed data. Since our outcome variable has 5 levels, we should use a tree method. In our case we will use Random Forests.</p>
+<pre class="r"><code>trainPCA &lt;- predict(preProc,trainSet[,-53])
+library(randomForest)</code></pre>
+<pre><code>## randomForest 4.6-10
 ## Type rfNews() to see new features/changes/bug fixes.
 ## 
 ## Attaching package: 'randomForest'
@@ -120,7 +126,94 @@ modelFit &lt;- train(filteredTrainingData$classe ~ ., method=&quot;rf&quot;, dat
 ## The following object is masked from 'package:gdata':
 ## 
 ##     combine</code></pre>
-<p>Note that the <code>echo = FALSE</code> parameter was added to the code chunk to prevent printing of the R code that generated the plot.</p>
+<pre class="r"><code>modelFit &lt;- randomForest(trainSet$classe ~ ., data=trainPCA)
+modelFit</code></pre>
+<pre><code>## 
+## Call:
+##  randomForest(formula = trainSet$classe ~ ., data = trainPCA) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 5
+## 
+##         OOB estimate of  error rate: 2.23%
+## Confusion matrix:
+##      A    B    C    D    E class.error
+## A 4156   12    9    6    2  0.00692951
+## B   42 2760   39    2    5  0.03089888
+## C    6   30 2502   25    4  0.02532139
+## D    4    3   84 2316    5  0.03980100
+## E    0   10   25   15 2656  0.01847746</code></pre>
+<pre class="r"><code>modelFit</code></pre>
+<pre><code>## 
+## Call:
+##  randomForest(formula = trainSet$classe ~ ., data = trainPCA) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 5
+## 
+##         OOB estimate of  error rate: 2.23%
+## Confusion matrix:
+##      A    B    C    D    E class.error
+## A 4156   12    9    6    2  0.00692951
+## B   42 2760   39    2    5  0.03089888
+## C    6   30 2502   25    4  0.02532139
+## D    4    3   84 2316    5  0.03980100
+## E    0   10   25   15 2656  0.01847746</code></pre>
+<p>As we can see, the out-of-bag error rate is 2.32%, which is a low error rate.</p>
+</div>
+<div id="cross-validation-and-out-of-sample-error" class="section level2">
+<h2>Cross-Validation and Out of Sample Error</h2>
+<p>Now let’s cross validate our fitted model with the test data set provided. We have to apply the test set to the same pre-processing algorithm used on the training data.</p>
+<pre class="r"><code>testPCA &lt;- predict(preProc,testSet[,-53])</code></pre>
+<p>Finally, let’s create a confusion matrix to obtain our out of sample error estimation.</p>
+<pre class="r"><code>confusionMatrix(testSet$classe,predict(modelFit,testPCA))</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1380    8    5    2    0
+##          B    7  924   11    2    5
+##          C    0    8  840    6    1
+##          D    0    0   34  767    3
+##          E    0    1    6    5  889
+## 
+## Overall Statistics
+##                                           
+##                Accuracy : 0.9788          
+##                  95% CI : (0.9744, 0.9826)
+##     No Information Rate : 0.2828          
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
+##                                           
+##                   Kappa : 0.9732          
+##  Mcnemar's Test P-Value : NA              
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            0.9950   0.9819   0.9375   0.9808   0.9900
+## Specificity            0.9957   0.9937   0.9963   0.9910   0.9970
+## Pos Pred Value         0.9892   0.9737   0.9825   0.9540   0.9867
+## Neg Pred Value         0.9980   0.9957   0.9862   0.9963   0.9978
+## Prevalence             0.2828   0.1919   0.1827   0.1595   0.1831
+## Detection Rate         0.2814   0.1884   0.1713   0.1564   0.1813
+## Detection Prevalence   0.2845   0.1935   0.1743   0.1639   0.1837
+## Balanced Accuracy      0.9953   0.9878   0.9669   0.9859   0.9935</code></pre>
+<p>We can confirm the accuracy of our model with the testing set, where we got a 97.68% accuracy with a 95% confidence interval ranging from 97.21% to 98.08%. The sensitivy and specificity of our model for all 5 classes were very high as well, all above 93%.</p>
+</div>
+<div id="applying-our-model-to-the-20-samples-of-the-pml-testing.csv-file" class="section level2">
+<h2>Applying our model to the 20 samples of the pml-testing.csv file</h2>
+<p>Let’s first load the file</p>
+<pre class="r"><code>exam &lt;- read.csv(&quot;pml-testing.csv&quot;)</code></pre>
+<p>Let’s apply the same transformations as we did in the pml-training.csv file prior predicting our model. Let’s keep only the 52 columns used for the PCA and then apply our PCA algorithm to the data set.</p>
+<pre class="r"><code>exam &lt;- read.csv(&quot;pml-testing.csv&quot;)
+exam &lt;- cbind(exam[, which(names(exam) %in% names(filteredData))],data.frame(&quot;problem_id&quot;=exam$problem_id))
+examPCA &lt;- predict(preProc,exam[,-53])</code></pre>
+<p>Now let’s predict the outcome based on our model</p>
+<pre class="r"><code>answers &lt;- predict(modelFit,examPCA)
+answers</code></pre>
+<pre><code>##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
+##  B  A  B  A  A  E  D  B  A  A  A  C  B  A  E  E  A  B  B  B 
+## Levels: A B C D E</code></pre>
 </div>
 
 
